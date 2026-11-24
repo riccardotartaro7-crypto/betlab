@@ -300,7 +300,7 @@ function footer(comp) {
     if (!s.odds) warn.push("quote non disponibili");
   }
   const info = comp === "CL" && D.cl
-    ? `${D.cl.n_played} partite di Champions giocate · media ${D.cl.t0} gol a partita · forza squadre: classifica Elo (clubelo.com)`
+    ? `${D.cl.n_played} partite di Champions giocate · media ${D.cl.t0} gol a partita · forza squadre: Elo calcolato dai risultati di campionati e coppe dal 2022`
     : `${D.league.n_matches} partite analizzate`;
   return `<p class="note">Dati aggiornati: ${romeFull.format(new Date(D.generated))} · ${info}
     ${warn.length ? `<br><span class="warn">⚠ ${warn.join(" · ")}</span>` : ""}</p>
@@ -308,8 +308,7 @@ function footer(comp) {
     <p class="note">Le probabilità sono stime statistiche, non certezze. Usale per ragionare, non come garanzia.</p>
     <p class="note">Dati: <a style="color:var(--acc2)" href="https://www.football-data.org">football-data.org</a> ·
       <a style="color:var(--acc2)" href="https://www.football-data.co.uk">football-data.co.uk</a> ·
-      <a style="color:var(--acc2)" href="https://www.api-football.com">API-Football</a> ·
-      <a style="color:var(--acc2)" href="http://clubelo.com">ClubElo</a></p>`;
+      <a style="color:var(--acc2)" href="https://www.api-football.com">API-Football</a></p>`;
 }
 
 function renderMatch(id) {
@@ -410,9 +409,9 @@ function renderMatch(id) {
   const formHtml = F => `<div class="form">${(F || []).map(f => `<span class="f${f.r}" title="${esc((f.h ? "vs " : "@ ") + f.o + " " + f.s)}">${f.r}</span>`).join("")}</div>`;
   html += `<div class="card"><h2>Momento e stile di gioco</h2>
     ${a.CL ? `<table><tr><th></th><th>${esc(H.name)}</th><th>${esc(A.name)}</th></tr>
-      <tr><td>Elo (forza)</td><td>${H.elo}</td><td>${A.elo}</td></tr>
+      <tr><td>Elo (forza)</td><td>${H.elo}${H.elo_n < 15 ? "*" : ""}</td><td>${A.elo}${A.elo_n < 15 ? "*" : ""}</td></tr>
       <tr><td>Campionato</td><td>${esc(H.league || "non coperto")}</td><td>${esc(A.league || "non coperto")}</td></tr></table>
-      <p class="note">Con il fattore campo, ${esc(H.name)} ha il ${Math.round(fx.model.we * 100)}% dei "punti attesi" secondo l'Elo.</p>
+      <p class="note">Con il fattore campo, ${esc(H.name)} ha il ${Math.round(fx.model.we * 100)}% dei "punti attesi" secondo l'Elo.${H.elo_n < 15 || A.elo_n < 15 ? " * = poche partite nei dati, Elo meno affidabile." : ""}</p>
       <h2 style="margin-top:12px">Forma in Champions</h2>
       <div class="grid2"><div><b>${esc(H.name)}</b>${formHtml(H.cl_form)}</div><div><b>${esc(A.name)}</b>${formHtml(A.cl_form)}</div></div>
       <h2 style="margin-top:12px">Forma in campionato</h2>` : ""}

@@ -4,8 +4,9 @@ Bet Lab - Champions League.
 Chiamato da build_data.py. Restituisce il blocco "cl" di data.json.
 
 Idea del modello:
-  - La forza delle squadre viene dalla classifica Elo dei club (clubelo.com), che mette
-    sulla stessa scala squadre di campionati diversi.
+  - La forza delle squadre e' un Elo calcolato qui, partita per partita, dai risultati dei
+    campionati europei (dal 2022/23) e delle coppe europee: le coppe collegano i campionati
+    tra loro, cosi' squadre di paesi diversi stanno sulla stessa scala.
   - Elo -> "punti attesi" della squadra di casa -> differenza reti attesa.
   - Il totale gol atteso parte dalla media della Champions di quest'anno, corretto con
     quanto sono "da gol" le due squadre nei loro campionati.
@@ -22,7 +23,19 @@ import re
 from datetime import timedelta
 
 # ---- parametri --------------------------------------------------------------
-HFA_ELO = 60          # vantaggio del campo in punti Elo (in Europa e' piu' piccolo che in campionato)
+HFA_ELO = 60          # vantaggio del campo in punti Elo nelle partite di Champions
+ELO_FIRST = 2022      # l'Elo viene calcolato dai risultati a partire dalla stagione 2022/23
+ELO_K_DOM, ELO_K_EU = 20, 30
+ELO_HFA_DOM, ELO_HFA_EU = 65, 50
+# punto di partenza dell'Elo per paese (poi si corregge da solo con i risultati, coppe comprese)
+ELO_PRIOR = {"ENG": 1700, "ESP": 1660, "ITA": 1640, "GER": 1640, "FRA": 1600, "POR": 1570, "NED": 1560,
+             "BEL": 1520, "TUR": 1490, "AUT": 1490, "SCO": 1480, "SUI": 1480, "DEN": 1480, "GRE": 1480,
+             "CZE": 1480, "CRO": 1470, "UKR": 1470, "NOR": 1460, "SRB": 1460, "POL": 1450, "SWE": 1440,
+             "ISR": 1440, "CYP": 1440, "ROM": 1430}
+MAIN_DIVS = {"E0": "ENG", "SP1": "ESP", "D1": "GER", "I1": "ITA", "F1": "FRA", "N1": "NED", "P1": "POR",
+             "B1": "BEL", "SC0": "SCO", "T1": "TUR", "G1": "GRE"}
+EXTRA = {"AUT": "AUT", "DNK": "DEN", "NOR": "NOR", "POL": "POL", "ROU": "ROM", "SWE": "SWE", "SWZ": "SUI"}
+AF_CUPS = {2: "Champions League", 3: "Europa League", 848: "Conference League"}
 T_PRIOR = 3.0         # gol a partita tipici della Champions
 C0 = 4.0              # cartellini a partita tipici della Champions (stima)
 K0 = 10.0             # corner a partita tipici della Champions (stima)
@@ -42,7 +55,7 @@ COUNTRY = {
     "Slovakia": ("SVK", None, None), "Hungary": ("HUN", None, None), "Poland": ("POL", None, None),
     "Sweden": ("SWE", None, None), "Israel": ("ISR", None, None), "Bulgaria": ("BUL", None, None),
     "Romania": ("ROM", None, None), "Slovenia": ("SVN", None, None), "Moldova": ("MDA", None, None),
-    "Bosnia-Herzegovina": ("BIH", None, None), "Ireland": ("IRL", None, None), "Russia": ("RUS", None, None),
+    "Bosnia-Herzegovina": ("BIH", None, None), "Czech-Republic": ("CZE", None, None), "Ireland": ("IRL", None, None), "Russia": ("RUS", None, None),
     "Finland": ("FIN", None, None), "Iceland": ("ISL", None, None), "Georgia": ("GEO", None, None),
 }
 LEAGUE_NAME = {"E0": "Premier League", "SP1": "Liga", "D1": "Bundesliga", "I1": "Serie A",
@@ -75,7 +88,7 @@ ALIAS = {
     "olympiacos piraeus": "olympiakos", "kobenhavn": "kobenhavn", "copenhagen": "kobenhavn",
     "bodo glimt": "bodoe glimt", "bodoglimt": "bodoe glimt", "crvena zvezda": "crvena zvezda",
     "red star belgrade": "crvena zvezda", "shakhtar donetsk": "shakhtar", "dinamo zagreb": "dinamo zagreb",
-    "union saint gilloise": "union sg", "royale union saint gilloise": "union sg", "st gilloise": "union sg",
+    "union saint gilloise": "union sg", "union st gilloise": "union sg", "royale union saint gilloise": "union sg", "st gilloise": "union sg",
     "qarabag agdam": "qarabag", "kairat almaty": "kairat", "slavia praha": "slavia praha",
     "sparta praha": "sparta praha", "galatasaray": "galatasaray", "fenerbahce": "fenerbahce",
 }
@@ -211,90 +224,159 @@ def build(bd):
                                  stage=m.get("stage"), md=m.get("matchday"),
                                  ref=bd.ref_from_fd(m)))
 
-    # ---- 2. classifica Elo (clubelo.com)
-    # Il server di ClubElo a volte e' lento: provo piu' volte (http/https, oggi/ieri) e,
-    # se non risponde, uso l'ultima classifica salvata (l'Elo cambia poco da un giorno all'altro).
-    elo_path = os.path.join(CACHE, "cl_elo.csv")
-    text, errs = None, []
-    for day, scheme in ((NOW, "http"), (NOW, "https"), (NOW - timedelta(days=1), "http")):
-        try:
-            t = bd.decode(bd.fetch(f"{scheme}://api.clubelo.com/{day.strftime('%Y-%m-%d')}",
-                                   "clubelo.csv", timeout=45))
-            if t.startswith("Rank") or "Club" in t[:60]:
-                text = t
-                break
-            errs.append("risposta non valida")
-        except Exception as e:
-            errs.append(str(e)[:60])
-    if text and not bd.OFFLINE:
-        with open(elo_path, "w", encoding="utf-8") as f:
-            f.write(text)
-        ts["elo"] = bd.iso(NOW)
-    elif not text and os.path.exists(elo_path) and not bd.OFFLINE:
-        with open(elo_path, encoding="utf-8") as f:
-            text = f.read()
-        log(f"Champions: ClubElo non risponde ({errs[-1] if errs else '?'}), uso la classifica salvata "
-            f"del {ts.get('elo', '?')[:10]}")
-    elif not text:
-        log(f"Champions: classifica Elo non disponibile ({'; '.join(errs)})")
-    elo_rows = []
-    for r in csv.DictReader(io.StringIO(text or "")):
-        try:
-            elo_rows.append((r["Club"], r["Country"], float(r["Elo"])))
-        except (KeyError, ValueError, TypeError):
-            pass
-    if not elo_rows:
-        log("Champions: senza Elo non posso calcolare le probabilita'")
-        return None
-    by_country = {}
-    for club, ctry, elo in elo_rows:
-        by_country.setdefault(ctry, {})[norm(club, bd)] = (club, elo)
-    all_elo = {norm(c, bd): (c, e) for c, _, e in elo_rows}
+    # ---- 2. risultati: campionati (football-data.co.uk) + coppe europee -> Elo calcolato qui
+    cur = bd.season_start(NOW)
+
+    def ccode(country):
+        c = (country or "").replace("-", " ").strip()
+        hit = COUNTRY.get(c) or COUNTRY.get((country or "").strip())
+        return hit[0] if hit else c.upper()[:3]
+
+    # 2a. campionati principali: stagioni passate salvate per sempre, quella in corso riscaricata
+    leagues = {}          # div -> partite con statistiche (stagione scorsa + in corso)
+    elo_matches = []      # (data, paese, nome casa, nome ospite, gol casa, gol ospite, "dom"/"eu", div)
+    for div, code in MAIN_DIVS.items():
+        rows_style = []
+        for season in range(ELO_FIRST, cur + 1):
+            sc = bd.season_code(season)
+            text = bd.couk_csv(sc, f"{div}_{sc}.csv", season < cur, div=div)
+            rows = bd.parse_results(text or "", season)
+            for m in rows:
+                elo_matches.append((m["date"], code, m["home_name"], m["away_name"], m["hg"], m["ag"], "dom", div))
+            if season >= cur - 1:
+                rows_style += rows
+        if rows_style:
+            leagues[div] = rows_style
+
+    # 2b. altri campionati (Austria, Svizzera, Danimarca...): solo risultati, file unico per paese
+    for fname, code in EXTRA.items():
+        def get_extra(f=fname):
+            try:
+                text = bd.decode(bd.fetch(f"https://www.football-data.co.uk/new/{f}.csv", f"{f}.csv"))
+            except Exception as e:
+                log(f"Champions: campionato {f} non scaricato ({str(e)[:50]})")
+                return None
+            out = []
+            for r in csv.DictReader(io.StringIO(text)):
+                try:
+                    y = int((r.get("Season") or "")[:4])
+                except ValueError:
+                    continue
+                hg, ag = bd.num(r.get("HG") or r.get("FTHG")), bd.num(r.get("AG") or r.get("FTAG"))
+                dt = bd.parse_uk_dt(r.get("Date"), r.get("Time"))
+                if y < ELO_FIRST or hg is None or ag is None or dt is None:
+                    continue
+                out.append([bd.iso(dt), r.get("Home") or r.get("HomeTeam"), r.get("Away") or r.get("AwayTeam"),
+                            int(hg), int(ag)])
+            return out
+        for d, h, a, hg, ag in (cached(f"extra_{fname}.json", 24, get_extra) or []):
+            elo_matches.append((bd.parse_iso(d), code, h, a, hg, ag, "dom", fname))
+
+    # 2c. coppe europee 2022-2024 (piano gratuito di API-Football): collegano i campionati tra loro
+    af = bd.ApiFootball()
+    n_cup = 0
+    if af.enabled:
+        for lg in AF_CUPS:
+            for season in range(ELO_FIRST, ELO_FIRST + 3):
+                def get_teams(lg=lg, season=season):
+                    got = af.get(f"/teams?league={lg}&season={season}", f"af_teams_{lg}_{season}.json")
+                    return None if got is None else {str(x["team"]["id"]): [x["team"]["name"], x["team"].get("country")]
+                                                     for x in got}
+                def get_fx(lg=lg, season=season):
+                    got = af.get(f"/fixtures?league={lg}&season={season}", f"af_cup_{lg}_{season}.json")
+                    if got is None:
+                        return None
+                    out = []
+                    for fx in got:
+                        if (fx["fixture"].get("status") or {}).get("short") not in ("FT", "AET", "PEN"):
+                            continue
+                        ft = (fx.get("score") or {}).get("fulltime") or {}
+                        hg = ft.get("home") if ft.get("home") is not None else (fx.get("goals") or {}).get("home")
+                        ag = ft.get("away") if ft.get("away") is not None else (fx.get("goals") or {}).get("away")
+                        if hg is None or ag is None:
+                            continue
+                        out.append([fx["fixture"]["date"], str(fx["teams"]["home"]["id"]),
+                                    str(fx["teams"]["away"]["id"]), hg, ag])
+                    return out
+                tmap = cached(f"af_teams_{lg}_{season}.json", 24 * 3650, get_teams) or {}
+                fxs = cached(f"af_cup_{lg}_{season}.json", 24 * 3650, get_fx) or []
+                for d, h, a, hg, ag in fxs:
+                    if h in tmap and a in tmap:
+                        elo_matches.append((bd.parse_iso(d), (ccode(tmap[h][1]), ccode(tmap[a][1])),
+                                            tmap[h][0], tmap[a][0], hg, ag, "eu", lg))
+                        n_cup += 1
+        af.save()
+    # 2d. Champions in corso (football-data.org)
+    for m in played:
+        H, A = teams[m["home"]], teams[m["away"]]
+        elo_matches.append((m["date"], (ccode(H["country"]), ccode(A["country"])),
+                            (H["name"], H["full"]), (A["name"], A["full"]), m["hg"], m["ag"], "eu", "CL"))
+
+    # 2e. identita' delle squadre: stesso paese + nome simile = stessa squadra
+    reg = {}
+
+    def ident(code, names):
+        names = names if isinstance(names, tuple) else (names,)
+        r = reg.setdefault(code, {})
+        variants = [norm(n, bd) for n in names if n]
+        for v in variants:
+            if v in r:
+                return r[v]
+        hit, sc = best_match(variants, r)
+        if hit and sc >= 0.8:
+            for v in variants:
+                r[v] = hit
+            return hit
+        new_id = f"{code}:{variants[0] if variants else '?'}"
+        for v in variants:
+            r[v] = new_id
+        return new_id
+
+    # prima i campionati (nomi "di casa"), poi le coppe
+    elo_matches.sort(key=lambda x: (x[6] != "dom", x[0]))
+    resolved = []
+    for d, code, h, a, hg, ag, kind, comp in elo_matches:
+        ch, ca = (code if isinstance(code, tuple) else (code, code))
+        resolved.append((d, ident(ch, h), ident(ca, a), hg, ag, kind, comp, ch, ca))
+    resolved.sort(key=lambda x: x[0])
+
+    # 2f. calcolo dell'Elo, partita per partita in ordine di data
+    rating, n_games, league_teams = {}, {}, {}
+    for d, h, a, hg, ag, kind, comp, ch, ca in resolved:
+        for tid, code in ((h, ch), (a, ca)):
+            if tid not in rating:
+                mates = [rating[x] for x in league_teams.get(comp, ()) if x in rating] if kind == "dom" else []
+                if len(mates) >= 8:
+                    rating[tid] = sum(mates) / len(mates) - 75        # neopromossa
+                else:
+                    rating[tid] = ELO_PRIOR.get(code, 1400) - (0 if kind == "dom" else 50)
+                n_games[tid] = 0
+            if kind == "dom":
+                league_teams.setdefault(comp, set()).add(tid)
+        hfa = ELO_HFA_DOM if kind == "dom" else ELO_HFA_EU
+        k = ELO_K_DOM if kind == "dom" else ELO_K_EU
+        we = 1 / (1 + 10 ** (-(rating[h] + hfa - rating[a]) / 400))
+        w = 1.0 if hg > ag else (0.5 if hg == ag else 0.0)
+        gd = abs(hg - ag)
+        g = 1.0 if gd <= 1 else (1.5 if gd == 2 else (11 + gd) / 8)
+        delta = k * g * (w - we)
+        rating[h] += delta
+        rating[a] -= delta
+        n_games[h] += 1
+        n_games[a] += 1
 
     weak = []
     for k, t in teams.items():
-        code = COUNTRY.get(t["country"] or "", (None, None, None))[0]
-        variants = [norm(t["name"], bd), norm(t["full"], bd)]
-        cand = by_country.get(code) or all_elo
-        hit, sc = best_match(variants, cand)
-        if hit is None and cand is not all_elo:
-            hit, sc = best_match(variants, all_elo)
-        if hit:
-            t["elo"], t["elo_name"] = round(hit[1]), hit[0]
-            if sc < 0.9:
-                weak.append(f"{t['name']}→{hit[0]}")
+        tid = ident(ccode(t["country"]), (t["name"], t["full"]))
+        t["elo_n"] = n_games.get(tid, 0)
+        if tid in rating and n_games[tid] >= 3:
+            t["elo"] = round(rating[tid])
         else:
-            t["elo"] = None
-            weak.append(f"{t['name']}→?")
+            t["elo"] = round(rating.get(tid, ELO_PRIOR.get(ccode(t["country"]), 1400) - 50))
+            weak.append(f"{t['name']} (Elo stimato: poche partite)")
+    log(f"Champions: Elo calcolato su {len(resolved)} partite ({n_cup} di coppe europee 2022-24)")
 
-    # ---- 3. campionati nazionali (football-data.co.uk): stile delle squadre
-    cur = bd.season_start(NOW)
-    leagues = {}
-    need = {COUNTRY[t["country"]][1] for t in teams.values()
-            if t["country"] in COUNTRY and COUNTRY[t["country"]][1]}
-    for div in sorted(need):
-        rows = []
-        for season, forever in ((cur - 1, True), (cur, False)):
-            code = bd.season_code(season)
-            name = f"{div}_{code}.csv"
-            if forever:
-                text = bd.couk_csv(code, name, True, div=div)
-            else:
-                path = os.path.join(CACHE, name)
-                text = None
-                if not bd.OFFLINE and os.path.exists(path) and not due(name, DOM_REFRESH_H):
-                    with open(path, encoding="utf-8") as f:
-                        text = f.read()
-                if text is None:
-                    text = bd.couk_csv(code, name, False, div=div)
-                    if text and not bd.OFFLINE:
-                        with open(path, "w", encoding="utf-8") as f:
-                            f.write(text)
-                        ts[name] = bd.iso(NOW)
-            rows += bd.parse_results(text or "", season)
-        if rows:
-            leagues[div] = rows
-
+    # ---- 3. stile delle squadre nei loro campionati (cartellini, corner, gol)
     def rel(ms, key, hcol, acol):
         """Medie della squadra 'key' rispetto alla media del campionato (1 = nella media)."""
         ms2 = [m for m in ms if m[hcol] is not None]
@@ -326,7 +408,7 @@ def build(bd):
             names[norm(m["away_name"], bd)] = m["away"]
         key, sc = best_match([norm(t["name"], bd), norm(t["full"], bd)], names)
         if not key:
-            weak.append(f"{t['name']}→campionato?")
+            weak.append(f"{t['name']} (campionato non trovato)")
             continue
         for m in ms:
             if m["hy"] is not None:
@@ -419,8 +501,6 @@ def build(bd):
     fixtures = []
     for u in sorted(upcoming, key=lambda x: x["date"]):
         H, A = teams[u["home"]], teams[u["away"]]
-        if H.get("elo") is None or A.get("elo") is None:
-            continue
         hfa = 0 if (u["stage"] or "").upper() == "FINAL" else HFA_ELO
         we = 1 / (1 + 10 ** (-(H["elo"] + hfa - A["elo"]) / 400))
         total = t0 * max(0.8, min(1.25, math.sqrt(H["gf"] * A["gf"])))
@@ -435,7 +515,7 @@ def build(bd):
             odds=None, lineups=None, injuries=None))
 
     if weak:
-        log("Champions: abbinamenti da controllare: " + "; ".join(weak[:25]))
+        log("Champions: da controllare: " + "; ".join(weak[:25]))
     if not bd.OFFLINE:
         bd.save_json(st_path, state)
     return dict(generated=bd.iso(NOW), t0=round(t0, 2), n_played=n_pl, hfa=HFA_ELO, c0=C0, k0=K0,

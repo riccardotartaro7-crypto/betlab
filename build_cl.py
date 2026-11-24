@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import time
 from datetime import timedelta
 
 # ---- parametri --------------------------------------------------------------
@@ -274,6 +275,13 @@ def build(bd):
 
     # 2c. coppe europee 2022-2024 (piano gratuito di API-Football): collegano i campionati tra loro
     af = bd.ApiFootball()
+    _af_get = af.get
+
+    def af_get_slow(path, name):          # piano gratuito: max 10 richieste al minuto
+        if not bd.OFFLINE:
+            time.sleep(6.5)
+        return _af_get(path, name)
+    af.get = af_get_slow
     n_cup = 0
     if af.enabled:
         for lg in AF_CUPS:
@@ -315,14 +323,16 @@ def build(bd):
     # 2e. identita' delle squadre: stesso paese + nome simile = stessa squadra
     reg = {}
 
-    def ident(code, names):
+    def ident(code, names, fuzzy=True):
         names = names if isinstance(names, tuple) else (names,)
         r = reg.setdefault(code, {})
         variants = [norm(n, bd) for n in names if n]
         for v in variants:
             if v in r:
                 return r[v]
-        hit, sc = best_match(variants, r)
+        # nei campionati i nomi sono sempre scritti uguali: due nomi diversi = due squadre diverse
+        # (es. Club Brugge e Cercle Brugge). L'abbinamento "per somiglianza" vale solo per le coppe.
+        hit, sc = best_match(variants, r) if fuzzy else (None, 0)
         if hit and sc >= 0.8:
             for v in variants:
                 r[v] = hit
@@ -337,7 +347,8 @@ def build(bd):
     resolved = []
     for d, code, h, a, hg, ag, kind, comp in elo_matches:
         ch, ca = (code if isinstance(code, tuple) else (code, code))
-        resolved.append((d, ident(ch, h), ident(ca, a), hg, ag, kind, comp, ch, ca))
+        fz = kind != "dom"
+        resolved.append((d, ident(ch, h, fz), ident(ca, a, fz), hg, ag, kind, comp, ch, ca))
     resolved.sort(key=lambda x: x[0])
 
     # 2f. calcolo dell'Elo, partita per partita in ordine di data
@@ -498,12 +509,14 @@ def build(bd):
     n_pl = len(played)
     avg_goals = sum(m["hg"] + m["ag"] for m in played) / n_pl if n_pl else T_PRIOR
     t0 = (avg_goals * n_pl + T_PRIOR * 30) / (n_pl + 30)
+    gfs = [t["gf"] for t in teams.values() if t.get("dom")]
+    gf_mean = sum(gfs) / len(gfs) if gfs else 1.0
     fixtures = []
     for u in sorted(upcoming, key=lambda x: x["date"]):
         H, A = teams[u["home"]], teams[u["away"]]
         hfa = 0 if (u["stage"] or "").upper() == "FINAL" else HFA_ELO
         we = 1 / (1 + 10 ** (-(H["elo"] + hfa - A["elo"]) / 400))
-        total = t0 * max(0.8, min(1.25, math.sqrt(H["gf"] * A["gf"])))
+        total = t0 * max(0.8, min(1.25, math.sqrt(H["gf"] * A["gf"]) / gf_mean))
         lh, la = lambdas_from_elo(we, total)
         fixtures.append(dict(
             id=u["id"], comp="CL", date=bd.iso(u["date"]), home=u["home"], away=u["away"],

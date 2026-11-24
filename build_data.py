@@ -2,7 +2,7 @@
 """
 Bet Lab Serie A - raccolta dati.
 
-Scarica i dati di Serie A da fonti GRATUITE e crea docs/data.json,
+Scarica i dati di Serie A da fonti GRATUITE e crea data.json,
 che l'app sul telefono legge per calcolare le probabilita'.
 
 Fonti:
@@ -28,8 +28,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "docs", "data.json")
+ROOT = os.path.dirname(os.path.abspath(__file__))   # tutti i file stanno nella cartella principale
+OUT = os.path.join(ROOT, "data.json")
 CACHE = os.path.join(ROOT, "cache")
 
 FD_TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN", "").strip()

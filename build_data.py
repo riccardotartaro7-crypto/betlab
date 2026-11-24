@@ -22,6 +22,7 @@ import math
 import os
 import re
 import sys
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
@@ -163,13 +164,13 @@ def save_json(path, obj):
 
 
 # ---- 1. football-data.co.uk ------------------------------------------------
-def couk_csv(code, name, cache_forever=False):
+def couk_csv(code, name, cache_forever=False, div="I1"):
     cache_path = os.path.join(CACHE, name)
     if cache_forever and os.path.exists(cache_path) and not OFFLINE:
         with open(cache_path, encoding="utf-8") as f:
             return f.read()
     try:
-        url = (f"https://www.football-data.co.uk/mmz4281/{code}/I1.csv" if code
+        url = (f"https://www.football-data.co.uk/mmz4281/{code}/{div}.csv" if code
                else "https://www.football-data.co.uk/fixtures.csv")
         text = decode(fetch(url, name))
         if cache_forever and not OFFLINE:
@@ -229,9 +230,17 @@ def parse_odds(text):
 
 
 # ---- 2. football-data.org --------------------------------------------------
+_fd_last = [0.0]
+
+
 def fd_get(path, name):
     if not FD_TOKEN and not OFFLINE:
         return None
+    if not OFFLINE:   # piano gratuito: massimo 10 richieste al minuto
+        wait = 6.5 - (time.time() - _fd_last[0])
+        if wait > 0:
+            time.sleep(wait)
+        _fd_last[0] = time.time()
     try:
         b = fetch("https://api.football-data.org/v4" + path, name,
                   {"X-Auth-Token": FD_TOKEN})
@@ -736,6 +745,13 @@ def main():
         sources=dict(couk=bool(m_cur or m_prev), fd=bool(fd), scorers=bool(players),
                      af=af_cur_ok, ref_hist=sorted(hist), odds=bool(odds)),
         status=status)
+    try:
+        import build_cl
+        data["cl"] = build_cl.build(sys.modules[__name__])
+    except ImportError:
+        pass
+    except Exception as e:  # la Champions non deve mai bloccare la Serie A
+        log(f"Champions: errore imprevisto ({type(e).__name__}: {e})")
     save_json(OUT, data)
     print(f"OK: {len(fixtures)} partite, {len(out_teams)} squadre, {len(referees)} arbitri, "
           f"{sum(len(v) for v in players.values())} marcatori -> {OUT}", file=sys.stderr)

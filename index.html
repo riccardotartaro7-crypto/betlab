@@ -331,12 +331,13 @@ function renderMatch(id) {
     <label class="l">Arbitro ${fx.ref_name ? "(designato: " + esc(fx.ref_name) + ")" : "(non ancora designato: sceglilo tu)"}</label>
     <select id="selRef"><option value="">Non so / media della Serie A</option>
       ${newRef ? `<option value="${esc(newRef)}" selected>${esc(fx.ref_name)} (nessuno storico)</option>` : ""}
-      ${refs.map(([k, r]) => `<option value="${esc(k)}" ${s.ref === k ? "selected" : ""}>${esc(r.name)} · ${r.cards} cart./gara (${r.n})</option>`).join("")}
+      ${refs.map(([k, r]) => `<option value="${esc(k)}" ${s.ref === k ? "selected" : ""}>${esc(r.name)} · ×${r.factor.toFixed(2)} (${r.n} gare)</option>`).join("")}
     </select>
-    ${a.ref ? `<div class="refbox"><b>${esc(a.ref.name)}</b> · ${a.ref.n} partite nello storico<br>
-      Cartellini a gara: <b>${a.ref.cards}</b> (media Serie A ${D.league.cards_total.toFixed(2)}) · gialli ${a.ref.yel} · rossi ${a.ref.red}<br>
+    ${a.ref ? `<div class="refbox"><b>${esc(a.ref.name)}</b> · ${a.ref.n} partite nello storico${a.ref.n_cur != null ? ` (${a.ref.n_cur} quest'anno)` : ""}<br>
+      Cartellini a gara: <b>${a.ref.cards}</b> nello storico${a.ref.cards_cur != null ? ` · <b>${a.ref.cards_cur}</b> quest'anno` : ""}<br>
+      Media Serie A recente: ${D.league.cards_total.toFixed(2)} · gialli ${a.ref.yel} · rossi ${a.ref.red} a gara<br>
       Falli fischiati a gara: <b>${a.ref.fouls ?? "–"}</b> · vittorie casa ${Math.round(a.ref.home_win * 100)}%<br>
-      Effetto stimato sui cartellini: <b>×${a.refF.toFixed(2)}</b>${a.ref.n < 8 ? ' <span class="warn">(pochi dati, peso ridotto)</span>' : ""}</div>` : ""}
+      Effetto stimato rispetto a un arbitro medio: <b>×${a.refF.toFixed(2)}</b>${a.ref.n < 10 ? ' <span class="warn">(pochi dati, peso ridotto)</span>' : ""}</div>` : ""}
     <label class="l">Clima della partita</label>
     <select id="selInt">
       <option value="1" ${s.int == 1 ? "selected" : ""}>Normale</option>

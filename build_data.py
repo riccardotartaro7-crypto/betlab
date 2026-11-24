@@ -41,7 +41,8 @@ NOW = (datetime.fromisoformat(os.environ["NOW_ISO"]) if os.environ.get("NOW_ISO"
 # ---- parametri del modello -------------------------------------------------
 HALF_LIFE_DAYS = 150   # una partita di 150 giorni fa pesa la meta' di una di oggi
 K_TEAM = 3.0           # "partite fittizie nella media" per non esagerare con pochi dati
-K_REF = 6.0            # idem per gli arbitri
+K_REF = 6.0            # idem per gli arbitri (in "partite di peso pieno")
+REF_HALF_LIFE_DAYS = 730  # per gli arbitri lo storico vecchio conta di piu': stile stabile
 K_PLAYER = 2.0         # idem per i marcatori
 PLAYER_PRIOR_GPM = 0.04
 AF_DAILY_LIMIT = 90    # il piano gratuito di API-Football ne da' 100 al giorno
@@ -260,15 +261,17 @@ class ApiFootball:
         self.st.setdefault("ts", {})
         self.st.setdefault("lineups", {})
         self.st.setdefault("injuries", {})
+        self.st.setdefault("bad_seasons", {})
         self.enabled = bool(AF_KEY) or bool(OFFLINE and os.environ.get("AF_TEST"))
-        self.plan_error = None
+        self.last_error = None
 
     def due(self, name, hours):
         t = self.st["ts"].get(name)
         return t is None or (NOW - parse_iso(t)) > timedelta(hours=hours)
 
     def get(self, path, name):
-        if not self.enabled or self.plan_error:
+        self.last_error = None
+        if not self.enabled:
             return None
         if self.st["used"] >= AF_DAILY_LIMIT:
             log("API-Football: limite giornaliero raggiunto, riprovo domani")
@@ -279,16 +282,21 @@ class ApiFootball:
                       {"x-apisports-key": AF_KEY})
             data = json.loads(b)
         except (HTTPError, URLError, OSError, ValueError, TimeoutError) as e:
+            self.last_error = str(e)
             log(f"API-Football: errore su {path} ({e})")
             return None
         errs = data.get("errors")
         if errs:
             msg = "; ".join(f"{v}" for v in (errs.values() if isinstance(errs, dict) else errs))
-            log(f"API-Football: {msg}")
-            if "plan" in str(errs).lower() or "season" in str(errs).lower():
-                self.plan_error = msg
+            self.last_error = msg
+            if not self.season_error():
+                log(f"API-Football: {msg}")
             return None
         return data.get("response") or []
+
+    def season_error(self):
+        e = (self.last_error or "").lower()
+        return "season" in e or "plan" in e
 
     def save(self):
         if not OFFLINE:
@@ -396,36 +404,54 @@ def nb_dispersion(values):
     return max(3.0, min(60.0, m * m / (v - m)))
 
 
-def build_referees(matches, league_cards):
+def build_referees(by_season, cur):
+    """
+    Per ogni arbitro: cartellini a gara divisi per la media della Serie A in quella stagione
+    (cosi' stagioni con piu' o meno cartellini sono confrontabili). Le stagioni recenti pesano
+    di piu'. Con poche partite il valore viene avvicinato a 1 (= arbitro nella media).
+    """
     refs = {}
-    for m in matches:
-        if not m.get("ref") or m["hy"] is None:
+    for season, ms in by_season.items():
+        tot = [m["hy"] + m["ay"] + (m["hr"] or 0) + (m["ar"] or 0) for m in ms if m["hy"] is not None]
+        if not tot:
             continue
-        k = surname_key(m["ref"])
-        r = refs.setdefault(k, dict(name=m["ref"].split(",")[0].strip(), n=0, cards=0.0,
-                                    yel=0.0, red=0.0, fouls=0.0, nf=0, hw=0, pens=None,
-                                    last=None))
-        if len(m["ref"].split(",")[0]) > len(r["name"]):
-            r["name"] = m["ref"].split(",")[0].strip()
-        r["n"] += 1
-        r["yel"] += m["hy"] + m["ay"]
-        r["red"] += (m["hr"] or 0) + (m["ar"] or 0)
-        r["cards"] += m["hy"] + m["ay"] + (m["hr"] or 0) + (m["ar"] or 0)
-        if m["hf"] is not None:
-            r["fouls"] += m["hf"] + m["af"]
-            r["nf"] += 1
-        r["hw"] += 1 if m["hg"] > m["ag"] else 0
-        d = m["date"].strftime("%Y-%m-%d")
-        r["last"] = max(r["last"] or d, d)
+        savg = sum(tot) / len(tot)
+        for m in ms:
+            if not m.get("ref") or m["hy"] is None:
+                continue
+            c = m["hy"] + m["ay"] + (m["hr"] or 0) + (m["ar"] or 0)
+            w = 0.5 ** (max(0.0, (NOW - m["date"]).total_seconds() / 86400) / REF_HALF_LIFE_DAYS)
+            k = surname_key(m["ref"])
+            nm = m["ref"].split(",")[0].strip()
+            r = refs.setdefault(k, dict(name=nm, n=0, n_cur=0, cards=0.0, cards_cur=0.0, yel=0.0,
+                                        red=0.0, fouls=0.0, nf=0, hw=0, sw=0.0, rel=0.0, last=None))
+            if len(nm) > len(r["name"]):
+                r["name"] = nm
+            r["n"] += 1
+            r["cards"] += c
+            r["yel"] += m["hy"] + m["ay"]
+            r["red"] += (m["hr"] or 0) + (m["ar"] or 0)
+            r["sw"] += w
+            r["rel"] += w * c / savg if savg else w
+            if season == cur:
+                r["n_cur"] += 1
+                r["cards_cur"] += c
+            if m["hf"] is not None:
+                r["fouls"] += m["hf"] + m["af"]
+                r["nf"] += 1
+            r["hw"] += 1 if m["hg"] > m["ag"] else 0
+            d = m["date"].strftime("%Y-%m-%d")
+            r["last"] = max(r["last"] or d, d)
     out = {}
     for k, r in refs.items():
-        avg = r["cards"] / r["n"]
-        shrunk = (r["n"] * avg + K_REF * league_cards) / (r["n"] + K_REF)
-        out[k] = dict(name=r["name"], n=r["n"], cards=round(avg, 2),
-                      yel=round(r["yel"] / r["n"], 2), red=round(r["red"] / r["n"], 2),
+        n = r["n"]
+        out[k] = dict(name=r["name"], n=n, n_cur=r["n_cur"],
+                      cards=round(r["cards"] / n, 2),
+                      cards_cur=round(r["cards_cur"] / r["n_cur"], 2) if r["n_cur"] else None,
+                      yel=round(r["yel"] / n, 2), red=round(r["red"] / n, 2),
                       fouls=round(r["fouls"] / r["nf"], 1) if r["nf"] else None,
-                      home_win=round(r["hw"] / r["n"], 2),
-                      factor=round(shrunk / league_cards, 3) if league_cards else 1.0,
+                      home_win=round(r["hw"] / n, 2),
+                      factor=round((r["rel"] + K_REF) / (r["sw"] + K_REF), 3),
                       last=r["last"])
     return out
 
@@ -528,74 +554,100 @@ def main():
             m["ref"] = fd_ref.get((m["home"], m["away"]))
 
     # --- API-Football (facoltativa)
+    # Piano gratuito: di solito NON copre la stagione in corso, ma copre alcune stagioni
+    # passate. Da quelle prendo l'arbitro di ogni partita -> storico arbitri di piu' anni.
     af = ApiFootball()
-    af_fx = {}   # (home, away) -> fixture di API-Football
+    af_fx = {}            # (home, away) stagione in corso -> {id, ref}
     lineups, injuries = {}, {}
+    hist = {}             # stagione -> partite (con cartellini) usate solo per gli arbitri
+    af_cur_ok = False
     if af.enabled:
-        # stagione scorsa (una volta sola) e stagione attuale (una volta al giorno): arbitri
-        for season, hours, name in ((prev, 24 * 365, f"af_fixtures_{prev}.json"),
-                                    (cur, 24, f"af_fixtures_{cur}.json")):
+        bad = af.st["bad_seasons"]
+        for season in range(cur, cur - 5, -1):
+            name = f"af_fixtures_{season}.json"
             cpath = os.path.join(CACHE, name)
-            data = load_json(cpath, None) if not OFFLINE else None
+            b = bad.get(str(season))
+            if b and NOW - parse_iso(b) < timedelta(days=7):
+                continue          # stagione non coperta dal piano: riprovo tra una settimana
+            data = None if OFFLINE else load_json(cpath, None)
+            hours = 24 if season == cur else (24 * 30 if season == prev else 24 * 3650)
             if data is None or af.due(name, hours):
                 got = af.get(f"/fixtures?league={AF_LEAGUE}&season={season}", name)
                 if got is not None:
-                    data = got
+                    data = [dict(id=fx["fixture"]["id"],
+                                 h=team_key(fx["teams"]["home"]["name"]),
+                                 a=team_key(fx["teams"]["away"]["name"]),
+                                 ref=(fx["fixture"].get("referee") or "").strip() or None)
+                            for fx in got]
                     af.st["ts"][name] = iso(NOW)
+                    bad.pop(str(season), None)
                     if not OFFLINE:
                         save_json(cpath, data)
-            for fx in data or []:
-                h = team_key(fx["teams"]["home"]["name"])
-                a = team_key(fx["teams"]["away"]["name"])
-                ref = (fx["fixture"].get("referee") or "").strip()
-                af_fx[(season, h, a)] = fx
-                if ref:
-                    for m in (m_prev if season == prev else m_cur):
-                        if m["home"] == h and m["away"] == a and not m.get("ref"):
-                            m["ref"] = ref
-
-        # formazioni (da 90 minuti prima del calcio d'inizio) e indisponibili (ogni 6 ore)
-        for u in upcoming:
-            fx = af_fx.get((cur, u["home"], u["away"]))
-            if not fx:
+                elif af.season_error():
+                    bad[str(season)] = iso(NOW)
+            if not data:
                 continue
-            fid = str(fx["fixture"]["id"])
-            u["af_id"] = fid
-            if not u.get("ref") and fx["fixture"].get("referee"):
-                u["ref"] = fx["fixture"]["referee"]
-            mins = (u["date"] - NOW).total_seconds() / 60
-            if -150 < mins < 90 and not af.st["lineups"].get(fid):
-                got = af.get(f"/fixtures/lineups?fixture={fid}", f"af_lineups_{fid}.json")
-                if got:
-                    af.st["lineups"][fid] = got
-            if 0 < mins < 72 * 60 and af.due(f"inj{fid}", 6):
-                got = af.get(f"/injuries?fixture={fid}", f"af_injuries_{fid}.json")
-                if got is not None:
-                    af.st["injuries"][fid] = [
-                        dict(t=team_key(i["team"]["name"]), p=i["player"]["name"],
-                             why=i["player"].get("reason") or "", ty=i["player"].get("type") or "")
-                        for i in got]
-                    af.st["ts"][f"inj{fid}"] = iso(NOW)
-            if af.st["lineups"].get(fid):
-                lu = {}
-                for side in af.st["lineups"][fid]:
-                    tk = team_key(side["team"]["name"])
-                    lu[tk] = dict(
-                        formation=side.get("formation"),
-                        xi=[surname_key(p["player"]["name"]) for p in side.get("startXI", [])],
-                        bench=[surname_key(p["player"]["name"]) for p in side.get("substitutes", [])],
-                        xi_names=[p["player"]["name"] for p in side.get("startXI", [])])
-                lineups[u["id"]] = lu
-            if af.st["injuries"].get(fid):
-                injuries[u["id"]] = af.st["injuries"][fid]
-        # pulizia: tengo in cache solo le partite recenti
-        keep = {u.get("af_id") for u in upcoming}
-        af.st["lineups"] = {k: v for k, v in af.st["lineups"].items() if k in keep}
-        af.st["injuries"] = {k: v for k, v in af.st["injuries"].items() if k in keep}
-        af.save()
-        if af.plan_error:
-            log("API-Football: il piano gratuito non copre questa stagione -> "
+            refmap = {(f["h"], f["a"]): f["ref"] for f in data if f.get("ref")}
+            if season == cur:
+                af_cur_ok = True
+                af_fx = {(f["h"], f["a"]): f for f in data}
+                target = m_cur
+            elif season == prev:
+                target = m_prev
+            else:
+                code = season_code(season)
+                target = parse_results(couk_csv(code, f"I1_{code}.csv", True), season)
+                hist[season] = target
+            for m in target:
+                if not m.get("ref") and (m["home"], m["away"]) in refmap:
+                    m["ref"] = refmap[(m["home"], m["away"])]
+
+        if af_cur_ok:
+            # formazioni (da 90 minuti prima del calcio d'inizio) e indisponibili (ogni 6 ore)
+            for u in upcoming:
+                fx = af_fx.get((u["home"], u["away"]))
+                if not fx:
+                    continue
+                fid = str(fx["id"])
+                u["af_id"] = fid
+                if not u.get("ref") and fx.get("ref"):
+                    u["ref"] = fx["ref"]
+                mins = (u["date"] - NOW).total_seconds() / 60
+                if -150 < mins < 90 and not af.st["lineups"].get(fid):
+                    got = af.get(f"/fixtures/lineups?fixture={fid}", f"af_lineups_{fid}.json")
+                    if got:
+                        af.st["lineups"][fid] = got
+                if 0 < mins < 72 * 60 and af.due(f"inj{fid}", 6):
+                    got = af.get(f"/injuries?fixture={fid}", f"af_injuries_{fid}.json")
+                    if got is not None:
+                        af.st["injuries"][fid] = [
+                            dict(t=team_key(i["team"]["name"]), p=i["player"]["name"],
+                                 why=i["player"].get("reason") or "", ty=i["player"].get("type") or "")
+                            for i in got]
+                        af.st["ts"][f"inj{fid}"] = iso(NOW)
+                if af.st["lineups"].get(fid):
+                    lu = {}
+                    for side in af.st["lineups"][fid]:
+                        tk = team_key(side["team"]["name"])
+                        lu[tk] = dict(
+                            formation=side.get("formation"),
+                            xi=[surname_key(p["player"]["name"]) for p in side.get("startXI", [])],
+                            bench=[surname_key(p["player"]["name"]) for p in side.get("substitutes", [])],
+                            xi_names=[p["player"]["name"] for p in side.get("startXI", [])])
+                    lineups[u["id"]] = lu
+                if af.st["injuries"].get(fid):
+                    injuries[u["id"]] = af.st["injuries"][fid]
+            keep = {u.get("af_id") for u in upcoming}
+            af.st["lineups"] = {k: v for k, v in af.st["lineups"].items() if k in keep}
+            af.st["injuries"] = {k: v for k, v in af.st["injuries"].items() if k in keep}
+        else:
+            log("API-Football: il piano gratuito non copre la stagione in corso -> "
                 "formazioni e indisponibili vanno segnati a mano nell'app")
+        af.save()
+    n_hist = sum(1 for ms in hist.values() for m in ms if m.get("ref"))
+    if n_hist:
+        log(f"Storico arbitri: aggiunte {n_hist} partite delle stagioni "
+            + ", ".join(f"{s}/{str(s + 1)[-2:]}" for s in sorted(hist)))
 
     # --- calcoli
     matches = m_prev + m_cur
@@ -618,7 +670,9 @@ def main():
     card_totals = [m["hcard"] + m["acard"] for m in matches if m["hcard"] is not None]
     corner_totals = [m["hc"] + m["ac"] for m in matches if m["hc"] is not None]
     league_cards = (sum(card_totals) / len(card_totals)) if card_totals else 4.5
-    referees = build_referees(matches, league_cards)
+    by_season = {prev: m_prev, cur: m_cur}
+    by_season.update(hist)
+    referees = build_referees(by_season, cur)
 
     # --- marcatori
     players = {}
@@ -680,7 +734,7 @@ def main():
             n_matches=len(matches), n_cur=len(m_cur)),
         teams=out_teams, referees=referees, fixtures=fixtures, players=players,
         sources=dict(couk=bool(m_cur or m_prev), fd=bool(fd), scorers=bool(players),
-                     af=af.enabled and not af.plan_error, odds=bool(odds)),
+                     af=af_cur_ok, ref_hist=sorted(hist), odds=bool(odds)),
         status=status)
     save_json(OUT, data)
     print(f"OK: {len(fixtures)} partite, {len(out_teams)} squadre, {len(referees)} arbitri, "

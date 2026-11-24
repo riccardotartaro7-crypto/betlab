@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bet Lab">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Bet Lab · Serie A</title>
+<style>
+  :root{
+    --bg:#0e1116; --card:#171b22; --card2:#1e232c; --line:#2a303b;
+    --tx:#e9edf3; --mut:#8b95a5; --acc:#3ddc97; --acc2:#5aa9ff; --warn:#ffb547; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--tx);
+    font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:5;background:rgba(14,17,22,.92);backdrop-filter:blur(10px);
+    padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:10px}
+  header h1{font-size:17px;margin:0;flex:1;letter-spacing:.2px}
+  header h1 small{color:var(--mut);font-weight:500}
+  .back{background:none;border:0;color:var(--acc2);font-size:16px;padding:4px 6px 4px 0;cursor:pointer}
+  main{padding:12px 12px calc(env(safe-area-inset-bottom) + 30px);max-width:720px;margin:0 auto}
+  .day{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.8px;margin:18px 4px 8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+  .fx{cursor:pointer}
+  .fx .row1{display:flex;justify-content:space-between;color:var(--mut);font-size:12px}
+  .fx .teams{font-size:17px;font-weight:600;margin:4px 0 10px}
+  .mini{display:flex;gap:6px}
+  .mini div{flex:1;background:var(--card2);border-radius:8px;padding:6px 4px;text-align:center}
+  .mini b{display:block;font-size:15px}
+  .mini span{font-size:11px;color:var(--mut)}
+  .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:20px;background:var(--card2);
+    color:var(--mut);margin-right:4px}
+  .tag.ok{color:var(--acc);background:rgba(61,220,151,.1)}
+  .tag.w{color:var(--warn);background:rgba(255,181,71,.1)}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mut);margin:0 0 10px}
+  .big{display:flex;align-items:center;justify-content:space-between;text-align:center;margin:6px 0 4px}
+  .big .t{flex:1;font-size:18px;font-weight:700}
+  .big .vs{color:var(--mut);font-size:13px;padding:0 6px}
+  .sub{color:var(--mut);font-size:12px;text-align:center}
+  .p{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:8px 0;border-top:1px solid var(--line)}
+  .p:first-of-type{border-top:0}
+  .p .lab{font-size:14px}
+  .p .pct{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+  .bar{grid-column:1/3;height:5px;background:var(--card2);border-radius:3px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--acc2);border-radius:3px}
+  .p .info{grid-column:1/3;font-size:12px;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap}
+  .val{color:var(--acc);font-weight:600}
+  .noval{color:var(--mut)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .kpi{background:var(--card2);border-radius:10px;padding:10px;text-align:center}
+  .kpi b{display:block;font-size:20px}
+  .kpi span{font-size:11px;color:var(--mut)}
+  select{width:100%;background:var(--card2);color:var(--tx);border:1px solid var(--line);border-radius:10px;
+    padding:10px;font-size:15px;margin:4px 0 10px;-webkit-appearance:none;appearance:none}
+  label.l{font-size:12px;color:var(--mut)}
+  .refbox{background:var(--card2);border-radius:10px;padding:10px;font-size:13px;margin-bottom:10px}
+  .refbox b{color:var(--tx)}
+  .pl{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+  .pl:first-child{border-top:0}
+  .pl .n{flex:1;min-width:0}
+  .pl .n div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pl .n small{color:var(--mut);font-size:11px}
+  .pl .pp{font-weight:700;width:52px;text-align:right;font-variant-numeric:tabular-nums}
+  .seg{display:flex;background:var(--card2);border-radius:8px;overflow:hidden;flex-shrink:0}
+  .seg button{background:none;border:0;color:var(--mut);font-size:11px;padding:6px 7px;cursor:pointer}
+  .seg button.on{background:var(--acc2);color:#06101f;font-weight:700}
+  .seg button.on.out{background:var(--bad)}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tabs button{flex:1;background:var(--card2);border:1px solid var(--line);color:var(--mut);border-radius:10px;
+    padding:8px;font-size:14px;cursor:pointer}
+  .tabs button.on{color:var(--tx);border-color:var(--acc2)}
+  .form{display:flex;gap:4px;margin:6px 0}
+  .form span{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:#0b0e13}
+  .fV{background:var(--acc)} .fN{background:#c9d1dc} .fP{background:var(--bad)}
+  table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+  td,th{padding:6px 4px;border-top:1px solid var(--line);text-align:center}
+  th{color:var(--mut);font-weight:500;font-size:12px}
+  td:first-child,th:first-child{text-align:left;color:var(--mut)}
+  .btn{display:block;width:100%;background:var(--acc);color:#04140c;border:0;border-radius:12px;padding:14px;
+    font-size:16px;font-weight:700;cursor:pointer;margin-top:4px}
+  .btn.sec{background:var(--card2);color:var(--tx);border:1px solid var(--line)}
+  .note{font-size:12px;color:var(--mut);margin:8px 2px}
+  .warn{color:var(--warn)}
+  .scores{display:flex;flex-wrap:wrap;gap:6px}
+  .scores div{background:var(--card2);border-radius:8px;padding:6px 10px;font-size:13px}
+  .scores b{margin-right:6px}
+  .empty{text-align:center;color:var(--mut);padding:40px 10px}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 24px);transform:translateX(-50%);
+    background:var(--acc);color:#04140c;padding:10px 16px;border-radius:20px;font-weight:600;
+    opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <button class="back" id="back" hidden>‹ Partite</button>
+  <h1 id="title">Bet Lab <small>Serie A</small></h1>
+</header>
+<main id="app"><div class="empty">Carico i dati…</div></main>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ======================= MATEMATICA ======================= */
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const pct = p => (p * 100).toFixed(p < 0.1 ? 1 : 0) + "%";
+const fair = p => p > 0 ? (1 / p).toFixed(2) : "–";
+
+function poisson(l, n) {               // P(X=0..n) con media l
+  const out = [Math.exp(-l)];
+  for (let k = 1; k <= n; k++) out.push(out[k - 1] * l / k);
+  return out;
+}
+function negbin(m, r, n) {             // binomiale negativa: media m, dispersione r
+  if (!(r > 0) || r > 500) return poisson(m, n);
+  const q = m / (r + m), out = [Math.pow(r / (r + m), r)];
+  for (let k = 0; k < n; k++) out.push(out[k] * (k + r) / (k + 1) * q);
+  return out;
+}
+const overP = (pmf, line) => 1 - pmf.slice(0, Math.floor(line) + 1).reduce((a, b) => a + b, 0);
+
+/* Matrice dei risultati: Poisson + correzione di Dixon-Coles sui punteggi bassi */
+function scoreMatrix(lh, la, rho) {
+  const N = 10, ph = poisson(lh, N), pa = poisson(la, N), M = [];
+  let tot = 0;
+  for (let i = 0; i <= N; i++) {
+    M.push([]);
+    for (let j = 0; j <= N; j++) {
+      let tau = 1;
+      if (i === 0 && j === 0) tau = 1 - lh * la * rho;
+      else if (i === 0 && j === 1) tau = 1 + lh * rho;
+      else if (i === 1 && j === 0) tau = 1 + la * rho;
+      else if (i === 1 && j === 1) tau = 1 - rho;
+      const v = Math.max(0, ph[i] * pa[j] * tau);
+      M[i].push(v); tot += v;
+    }
+  }
+  return M.map(r => r.map(v => v / tot));
+}
+function markets(M) {
+  const r = {h: 0, d: 0, a: 0, gg: 0, over: {0.5: 0, 1.5: 0, 2.5: 0, 3.5: 0, 4.5: 0}, hs: 0, as: 0, list: []};
+  M.forEach((row, i) => row.forEach((p, j) => {
+    if (i > j) r.h += p; else if (i === j) r.d += p; else r.a += p;
+    if (i > 0 && j > 0) r.gg += p;
+    if (i > 0) r.hs += p;
+    if (j > 0) r.as += p;
+    for (const k in r.over) if (i + j > k) r.over[k] += p;
+    r.list.push({s: i + "-" + j, p});
+  }));
+  r.list.sort((x, y) => y.p - x.p);
+  return r;
+}
+
+/* ======================= STATO ======================= */
+let D = null;                    // data.json
+const ST = loadState();          // scelte dell'utente (arbitro, intensita', giocatori)
+function loadState() { try { return JSON.parse(localStorage.getItem("betlab") || "{}"); } catch (e) { return {}; } }
+function saveState() { try { localStorage.setItem("betlab", JSON.stringify(ST)); } catch (e) {} }
+function fxState(fx) {
+  if (!ST[fx.id]) ST[fx.id] = {ref: fx.ref && D.referees[fx.ref] ? fx.ref : (fx.ref ? "new:" + fx.ref : ""),
+                               int: 1, pl: {}, tab: fx.home};
+  return ST[fx.id];
+}
+
+/* Stato di default di un giocatore: formazione ufficiale > indisponibili > "probabile" */
+function defaultPlayerState(fx, team, p) {
+  const lu = fx.lineups && fx.lineups[team];
+  if (lu && lu.xi && lu.xi.length) {
+    if (lu.xi.includes(p.key)) return "tit";
+    if (lu.bench.includes(p.key)) return "pan";
+    return "out";
+  }
+  if ((fx.injuries || []).some(i => i.t === team && surname(i.p) === p.key)) return "out";
+  return "prob";
+}
+function surname(n) {
+  const t = (n || "").split(",")[0].normalize("NFKD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().replace(/[^a-z ]/g, " ").trim().split(/\s+/);
+  return t[t.length - 1] || "";
+}
+const MINF = {tit: 1.12, prob: 1.0, pan: 0.3, out: 0};
+
+/* ======================= MODELLO PARTITA ======================= */
+function analyse(fx) {
+  const L = D.league, H = D.teams[fx.home], A = D.teams[fx.away], s = fxState(fx);
+  const teamGpm = (T, base) => (T.st && T.st.gfpm > 0 ? T.st.gfpm : base);
+  // giocatori e peso delle assenze sui gol attesi
+  const side = (team, T, base) => {
+    const list = (D.players[team] || []).slice(0, 12).map(p => {
+      const st = (s.pl[team + "|" + p.key]) || defaultPlayerState(fx, team, p);
+      return Object.assign({}, p, {state: st});
+    });
+    const tg = teamGpm(T, base);
+    const lost = list.filter(p => p.state === "out").reduce((a, p) => a + p.gpm / tg, 0);
+    return {list, tg, adj: clamp(1 - 0.5 * lost, 0.7, 1)};
+  };
+  const sh = side(fx.home, H, L.mu_h), sa = side(fx.away, A, L.mu_a);
+  const lh = L.mu_h * H.att * A.de * sh.adj;
+  const la = L.mu_a * A.att * H.de * sa.adj;
+  const M = scoreMatrix(lh, la, L.rho), mk = markets(M);
+
+  // marcatori: gol a partita (ridimensionati) x quanto la squadra segnera' oggi rispetto al solito
+  const scorers = (sd, lam) => sd.list.map(p => {
+    const l = p.gpm * clamp(lam / sd.tg, 0.4, 2.5) * MINF[p.state];
+    return Object.assign(p, {prob: 1 - Math.exp(-l)});
+  });
+
+  // cartellini: tendenza squadra x quanto l'avversario li "provoca" x arbitro x intensita'
+  let refF = 1, ref = null;
+  if (s.ref && !s.ref.startsWith("new:") && D.referees[s.ref]) { ref = D.referees[s.ref]; refF = ref.factor; }
+  const ch = L.cards_h * H.cf * A.ca * refF * s.int;
+  const ca = L.cards_a * A.cf * H.ca * refF * s.int;
+  const r = L.cards_r, tot = negbin(ch + ca, r, 25);
+  const cardsH = negbin(ch, r * ch / (ch + ca), 15), cardsA = negbin(ca, r * ca / (ch + ca), 15);
+  // corner
+  const kh = L.corners_h * H.kf * A.ka, ka = L.corners_a * A.kf * H.ka;
+  const ktot = negbin(kh + ka, L.corners_r, 35);
+
+  return {H, A, s, lh, la, M, mk, ref, refF,
+    sh: scorers(sh, lh).sort((x, y) => y.prob - x.prob),
+    sa: scorers(sa, la).sort((x, y) => y.prob - x.prob),
+    adjH: sh.adj, adjA: sa.adj,
+    cards: {h: ch, a: ca, tot, cardsH, cardsA}, corners: {h: kh, a: ka, tot: ktot}};
+}
+
+/* ======================= INTERFACCIA ======================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const romeFmt = new Intl.DateTimeFormat("it-IT", {timeZone: "Europe/Rome", weekday: "long", day: "2-digit", month: "2-digit"});
+const romeTime = new Intl.DateTimeFormat("it-IT", {timeZone: "Europe/Rome", hour: "2-digit", minute: "2-digit"});
+const romeFull = new Intl.DateTimeFormat("it-IT", {timeZone: "Europe/Rome", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"});
+
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("on"); setTimeout(() => el.classList.remove("on"), 1800); }
+
+function valueInfo(p, odd) {
+  if (!odd) return "";
+  const ev = p * odd - 1;
+  return `<span>quota ${odd.toFixed(2)}</span>` +
+    (ev > 0.03 ? `<span class="val">valore +${(ev * 100).toFixed(0)}%</span>` : `<span class="noval">nessun valore</span>`);
+}
+function prow(lab, p, odd) {
+  return `<div class="p"><div class="lab">${lab}</div><div class="pct">${pct(p)}</div>
+    <div class="bar"><i style="width:${(p * 100).toFixed(1)}%"></i></div>
+    <div class="info"><span>quota giusta ${fair(p)}</span>${valueInfo(p, odd)}</div></div>`;
+}
+
+function renderList() {
+  $("#back").hidden = true;
+  $("#title").innerHTML = `Bet Lab <small>Serie A ${esc(D.season)}</small>`;
+  const fxs = D.fixtures.filter(f => D.teams[f.home] && D.teams[f.away]);
+  if (!fxs.length) { $("#app").innerHTML = `<div class="empty">Nessuna partita nei prossimi giorni.</div>` + footer(); return; }
+  let html = "", lastDay = "";
+  for (const fx of fxs) {
+    const d = new Date(fx.date), day = romeFmt.format(d);
+    if (day !== lastDay) { html += `<div class="day">${esc(day)}${fx.md ? " · " + fx.md + "ª giornata" : ""}</div>`; lastDay = day; }
+    const a = analyse(fx), H = D.teams[fx.home], A = D.teams[fx.away];
+    const tags = [];
+    if (fx.postponed) tags.push(`<span class="tag w">rinviata</span>`);
+    if (fx.lineups) tags.push(`<span class="tag ok">formazioni ufficiali</span>`);
+    if (fx.ref_name) tags.push(`<span class="tag">arb. ${esc(fx.ref_name)}</span>`);
+    html += `<div class="card fx" data-id="${esc(fx.id)}">
+      <div class="row1"><span>${romeTime.format(d)}</span><span>${tags.join("")}</span></div>
+      <div class="teams">${esc(H.name)} – ${esc(A.name)}</div>
+      <div class="mini">
+        <div><b>${pct(a.mk.h)}</b><span>1</span></div><div><b>${pct(a.mk.d)}</b><span>X</span></div>
+        <div><b>${pct(a.mk.a)}</b><span>2</span></div><div><b>${pct(a.mk.over[2.5])}</b><span>Over 2.5</span></div>
+        <div><b>${(a.cards.h + a.cards.a).toFixed(1)}</b><span>cartellini</span></div>
+      </div></div>`;
+  }
+  $("#app").innerHTML = html + footer();
+  document.querySelectorAll(".fx").forEach(el => el.onclick = () => { location.hash = "#m/" + encodeURIComponent(el.dataset.id); });
+}
+
+function footer() {
+  const s = D.sources, warn = [];
+  if (!s.scorers) warn.push("marcatori non disponibili");
+  if (!s.af) warn.push("formazioni e indisponibili da segnare a mano");
+  if (!s.odds) warn.push("quote non disponibili");
+  return `<p class="note">Dati aggiornati: ${romeFull.format(new Date(D.generated))} · ${D.league.n_matches} partite analizzate
+    ${warn.length ? `<br><span class="warn">⚠ ${warn.join(" · ")}</span>` : ""}</p>
+    <details class="note"><summary>Registro aggiornamento</summary>${D.status.map(esc).join("<br>") || "tutto ok"}</details>
+    <p class="note">Le probabilità sono stime statistiche, non certezze. Usale per ragionare, non come garanzia.</p>
+    <p class="note">Dati: <a style="color:var(--acc2)" href="https://www.football-data.org">football-data.org</a> ·
+      <a style="color:var(--acc2)" href="https://www.football-data.co.uk">football-data.co.uk</a> ·
+      <a style="color:var(--acc2)" href="https://www.api-football.com">API-Football</a></p>`;
+}
+
+function renderMatch(id) {
+  const fx = D.fixtures.find(f => f.id === id);
+  if (!fx) { location.hash = ""; return; }
+  const a = analyse(fx), H = a.H, A = a.A, o = fx.odds || {}, mk = a.mk, s = a.s;
+  $("#back").hidden = false;
+  $("#title").textContent = `${H.name} – ${A.name}`;
+  const d = new Date(fx.date);
+
+  // ---- esito e gol
+  let html = `<div class="card">
+    <div class="big"><div class="t">${esc(H.name)}</div><div class="vs">vs</div><div class="t">${esc(A.name)}</div></div>
+    <div class="sub">${esc(romeFmt.format(d))} · ore ${romeTime.format(d)}${fx.md ? " · " + fx.md + "ª giornata" : ""}</div>
+    <div class="grid2" style="margin-top:12px">
+      <div class="kpi"><b>${a.lh.toFixed(2)}</b><span>gol attesi ${esc(H.name)}</span></div>
+      <div class="kpi"><b>${a.la.toFixed(2)}</b><span>gol attesi ${esc(A.name)}</span></div>
+    </div>
+    ${a.adjH < 1 || a.adjA < 1 ? `<p class="note warn">Gol attesi ridotti per le assenze segnate (${esc(H.name)} ×${a.adjH.toFixed(2)}, ${esc(A.name)} ×${a.adjA.toFixed(2)})</p>` : ""}
+  </div>
+  <div class="card"><h2>Esito finale</h2>
+    ${prow("1 · " + esc(H.name), mk.h, o.h)}${prow("X · pareggio", mk.d, o.d)}${prow("2 · " + esc(A.name), mk.a, o.a)}
+    ${prow("1X", mk.h + mk.d)}${prow("X2", mk.d + mk.a)}${prow("12", mk.h + mk.a)}
+  </div>
+  <div class="card"><h2>Gol</h2>
+    ${prow("Over 1.5", mk.over[1.5])}${prow("Over 2.5", mk.over[2.5], o.o25)}${prow("Under 2.5", 1 - mk.over[2.5], o.u25)}
+    ${prow("Over 3.5", mk.over[3.5])}${prow("Goal (entrambe segnano)", mk.gg)}${prow("No Goal", 1 - mk.gg)}
+    ${prow(esc(H.name) + " segna", mk.hs)}${prow(esc(A.name) + " segna", mk.as)}
+    <h2 style="margin-top:14px">Risultati esatti più probabili</h2>
+    <div class="scores">${mk.list.slice(0, 8).map(x => `<div><b>${x.s}</b>${pct(x.p)}</div>`).join("")}</div>
+  </div>`;
+
+  // ---- cartellini
+  const refs = Object.entries(D.referees).sort((x, y) => x[1].name.localeCompare(y[1].name));
+  const newRef = s.ref && s.ref.startsWith("new:") ? s.ref : null;
+  const c = a.cards;
+  html += `<div class="card"><h2>Cartellini</h2>
+    <label class="l">Arbitro ${fx.ref_name ? "(designato: " + esc(fx.ref_name) + ")" : "(non ancora designato: sceglilo tu)"}</label>
+    <select id="selRef"><option value="">Non so / media della Serie A</option>
+      ${newRef ? `<option value="${esc(newRef)}" selected>${esc(fx.ref_name)} (nessuno storico)</option>` : ""}
+      ${refs.map(([k, r]) => `<option value="${esc(k)}" ${s.ref === k ? "selected" : ""}>${esc(r.name)} · ${r.cards} cart./gara (${r.n})</option>`).join("")}
+    </select>
+    ${a.ref ? `<div class="refbox"><b>${esc(a.ref.name)}</b> · ${a.ref.n} partite nello storico<br>
+      Cartellini a gara: <b>${a.ref.cards}</b> (media Serie A ${D.league.cards_total.toFixed(2)}) · gialli ${a.ref.yel} · rossi ${a.ref.red}<br>
+      Falli fischiati a gara: <b>${a.ref.fouls ?? "–"}</b> · vittorie casa ${Math.round(a.ref.home_win * 100)}%<br>
+      Effetto stimato sui cartellini: <b>×${a.refF.toFixed(2)}</b>${a.ref.n < 8 ? ' <span class="warn">(pochi dati, peso ridotto)</span>' : ""}</div>` : ""}
+    <label class="l">Clima della partita</label>
+    <select id="selInt">
+      <option value="1" ${s.int == 1 ? "selected" : ""}>Normale</option>
+      <option value="1.08" ${s.int == 1.08 ? "selected" : ""}>Sentita (classifica, rivalità)</option>
+      <option value="1.15" ${s.int == 1.15 ? "selected" : ""}>Derby / scontro diretto</option>
+      <option value="0.92" ${s.int == 0.92 ? "selected" : ""}>Poco in palio (fine stagione)</option>
+    </select>
+    <div class="grid2" style="margin-bottom:6px">
+      <div class="kpi"><b>${c.h.toFixed(1)}</b><span>attesi ${esc(H.name)}</span></div>
+      <div class="kpi"><b>${c.a.toFixed(1)}</b><span>attesi ${esc(A.name)}</span></div>
+    </div>
+    ${[2.5, 3.5, 4.5, 5.5, 6.5].map(l => prow("Over " + l + " cartellini", overP(c.tot, l))).join("")}
+    ${prow(esc(H.name) + " Over 1.5", overP(c.cardsH, 1.5))}${prow(esc(A.name) + " Over 1.5", overP(c.cardsA, 1.5))}
+    ${prow(esc(H.name) + " Over 2.5", overP(c.cardsH, 2.5))}${prow(esc(A.name) + " Over 2.5", overP(c.cardsA, 2.5))}
+    <p class="note">Conteggio: gialli + rossi, come nei dati. Controlla come li conta il tuo bookmaker.</p>
+  </div>
+  <div class="card"><h2>Calci d'angolo</h2>
+    <div class="grid2" style="margin-bottom:6px">
+      <div class="kpi"><b>${a.corners.h.toFixed(1)}</b><span>attesi ${esc(H.name)}</span></div>
+      <div class="kpi"><b>${a.corners.a.toFixed(1)}</b><span>attesi ${esc(A.name)}</span></div>
+    </div>
+    ${[7.5, 8.5, 9.5, 10.5, 11.5].map(l => prow("Over " + l + " corner", overP(a.corners.tot, l))).join("")}
+  </div>`;
+
+  // ---- marcatori
+  const tabTeam = s.tab === fx.away ? fx.away : fx.home;
+  const list = tabTeam === fx.home ? a.sh : a.sa;
+  const lu = fx.lineups && fx.lineups[tabTeam];
+  html += `<div class="card"><h2>Marcatori (segna almeno un gol)</h2>
+    <div class="tabs"><button data-t="${esc(fx.home)}" class="${tabTeam === fx.home ? "on" : ""}">${esc(H.name)}</button>
+      <button data-t="${esc(fx.away)}" class="${tabTeam === fx.away ? "on" : ""}">${esc(A.name)}</button></div>
+    ${lu ? `<p class="note"><span class="tag ok">ufficiale</span> modulo ${esc(lu.formation || "–")}</p>` :
+      `<p class="note">Formazione non ancora ufficiale: segna chi parte titolare, in panchina o fuori (es. da SOS Fanta).</p>`}
+    <div>${list.length ? list.map(p => `<div class="pl">
+      <div class="n"><div>${esc(p.name)}</div><small>${p.g} gol in ${p.pj} pres.${p.pen ? " · " + p.pen + " rig." : ""}</small></div>
+      <div class="seg" data-k="${esc(tabTeam + "|" + p.key)}">
+        ${[["tit", "Tit"], ["prob", "Prob"], ["pan", "Pan"], ["out", "Out"]].map(([v, t]) =>
+          `<button data-v="${v}" class="${p.state === v ? "on" + (v === "out" ? " out" : "") : ""}">${t}</button>`).join("")}
+      </div>
+      <div class="pp">${p.state === "out" ? "–" : pct(p.prob)}</div></div>`).join("")
+      : `<p class="note">Nessun dato sui marcatori per questa squadra.</p>`}</div>
+    <p class="note">Tit = titolare, Prob = probabile (default), Pan = panchina, Out = non gioca. Mostra solo chi ha già segnato in campionato.</p>
+  </div>`;
+
+  // ---- momento squadre
+  const tr = (lab, f) => `<tr><td>${lab}</td><td>${f(H.st)}</td><td>${f(A.st)}</td></tr>`;
+  const g = k => st => (st && st[k] != null ? st[k] : "–");
+  const formHtml = T => `<div class="form">${(T.form || []).map(f => `<span class="f${f.r}" title="${esc((f.h ? "vs " : "@ ") + f.o + " " + f.s)}">${f.r}</span>`).join("")}</div>`;
+  html += `<div class="card"><h2>Momento e stile di gioco</h2>
+    <div class="grid2"><div><b>${esc(H.name)}</b>${formHtml(H)}</div><div><b>${esc(A.name)}</b>${formHtml(A)}</div></div>
+    <p class="note">Ultime 5, dalla più recente.</p>
+    <table><tr><th>A partita</th><th>${esc(H.name)}</th><th>${esc(A.name)}</th></tr>
+      ${tr("Punti", st => st ? st.pts + " in " + st.pj : "–")}
+      ${tr("Gol fatti", g("gfpm"))}${tr("Gol subiti", g("gapm"))}
+      ${tr("Tiri", g("spm"))}${tr("Tiri in porta", g("sotpm"))}${tr("Tiri in porta subiti", g("sotapm"))}
+      ${tr("Falli", g("fpm"))}${tr("Corner", g("cpm"))}${tr("Cartellini", g("cardpm"))}
+    </table>
+    <table style="margin-top:6px"><tr><th>Indici (1.00 = media)</th><th>${esc(H.name)}</th><th>${esc(A.name)}</th></tr>
+      <tr><td>Attacco</td><td>${H.att.toFixed(2)}</td><td>${A.att.toFixed(2)}</td></tr>
+      <tr><td>Difesa (più basso = meglio)</td><td>${H.de.toFixed(2)}</td><td>${A.de.toFixed(2)}</td></tr>
+      <tr><td>Cartellini presi</td><td>${H.cf.toFixed(2)}</td><td>${A.cf.toFixed(2)}</td></tr>
+      <tr><td>Cartellini fatti prendere</td><td>${H.ca.toFixed(2)}</td><td>${A.ca.toFixed(2)}</td></tr>
+    </table>
+  </div>
+  <button class="btn" id="copy">Copia analisi per Claude</button>
+  <p class="note">Incolla il testo in Claude con la ricerca web attiva: controllerà le notizie dell'ultima ora e ti dirà come aggiustare i numeri.</p>
+  <button class="btn sec" id="reset">Ripristina scelte di questa partita</button>`;
+
+  $("#app").innerHTML = html;
+  window.scrollTo(0, window.__keepScroll || 0); window.__keepScroll = 0;
+
+  const rerender = () => { window.__keepScroll = window.scrollY; saveState(); renderMatch(id); };
+  $("#selRef").onchange = e => { s.ref = e.target.value; rerender(); };
+  $("#selInt").onchange = e => { s.int = parseFloat(e.target.value); rerender(); };
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { s.tab = b.dataset.t; rerender(); });
+  document.querySelectorAll(".seg").forEach(sg => sg.querySelectorAll("button").forEach(b =>
+    b.onclick = () => { s.pl[sg.dataset.k] = b.dataset.v; rerender(); }));
+  $("#reset").onclick = () => { delete ST[fx.id]; saveState(); renderMatch(id); toast("Scelte ripristinate"); };
+  $("#copy").onclick = () => copyText(claudePrompt(fx, a));
+}
+
+function claudePrompt(fx, a) {
+  const H = a.H.name, A = a.A.name, mk = a.mk, d = new Date(fx.date);
+  const top = (l, n) => l.filter(p => p.state !== "out").slice(0, n).map(p => `${p.name} ${pct(p.prob)}`).join(", ");
+  const out = [...a.sh, ...a.sa].filter(p => p.state === "out").map(p => p.name);
+  return `Partita di Serie A: ${H} - ${A}, ${romeFmt.format(d)} ore ${romeTime.format(d)}.
+
+Il mio modello statistico (Poisson su gol e tiri in porta, corretto per la forza degli avversari) stima:
+- Gol attesi: ${H} ${a.lh.toFixed(2)}, ${A} ${a.la.toFixed(2)}
+- 1X2: ${pct(mk.h)} / ${pct(mk.d)} / ${pct(mk.a)}
+- Over 2.5: ${pct(mk.over[2.5])} · Goal: ${pct(mk.gg)}
+- Risultati più probabili: ${mk.list.slice(0, 4).map(x => x.s + " " + pct(x.p)).join(", ")}
+- Cartellini attesi: ${(a.cards.h + a.cards.a).toFixed(1)} (${H} ${a.cards.h.toFixed(1)}, ${A} ${a.cards.a.toFixed(1)}), Over 4.5 cartellini ${pct(overP(a.cards.tot, 4.5))}
+- Arbitro: ${a.ref ? `${a.ref.name}, ${a.ref.cards} cartellini a gara su ${a.ref.n} partite (media Serie A ${D.league.cards_total.toFixed(2)})` : (fx.ref_name || "non noto")}
+- Corner attesi: ${(a.corners.h + a.corners.a).toFixed(1)}
+- Marcatori più probabili: ${H}: ${top(a.sh, 4) || "n.d."}; ${A}: ${top(a.sa, 4) || "n.d."}
+${out.length ? `- Ho già considerato assenti: ${out.join(", ")}\n` : ""}- Forma ultime 5: ${H} ${(a.H.form || []).map(f => f.r).join("")}, ${A} ${(a.A.form || []).map(f => f.r).join("")}
+${fx.odds && fx.odds.h ? `- Quote medie bookmaker 1X2: ${fx.odds.h} / ${fx.odds.d} / ${fx.odds.a}\n` : ""}
+Cerca le notizie dell'ultima ora (probabili formazioni su SOS Fanta, Fantacalcio.it, Gazzetta; infortuni, squalifiche, turnover per le coppe, motivazioni di classifica) e dimmi:
+1. quali notizie cambiano davvero le probabilità e in che direzione
+2. come aggiusteresti i numeri qui sopra, spiegando il perché
+Non inventare notizie: se non trovi conferme, dillo.`;
+}
+
+function copyText(t) {
+  const done = () => toast("Copiato! Incollalo in Claude");
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(t).then(done, () => fallbackCopy(t, done));
+  } else fallbackCopy(t, done);
+}
+function fallbackCopy(t, done) {
+  const ta = document.createElement("textarea");
+  ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); done(); } catch (e) { alert(t); }
+  ta.remove();
+}
+
+/* ======================= AVVIO ======================= */
+function route() {
+  if (!D) return;
+  const m = location.hash.match(/^#m\/(.+)$/);
+  if (m) renderMatch(decodeURIComponent(m[1])); else renderList();
+}
+$("#back").onclick = () => { location.hash = ""; };
+window.addEventListener("hashchange", route);
+
+fetch("data.json?t=" + Date.now(), {cache: "no-store"})
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(j => { D = j; route(); })
+  .catch(e => { $("#app").innerHTML = `<div class="empty">Non riesco a caricare i dati (${esc(e.message)}).<br>Sei offline o l'aggiornamento non è ancora partito.</div>`; });
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>

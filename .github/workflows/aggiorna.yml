@@ -1,0 +1,39 @@
+name: Aggiorna dati
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aggiorna-dati
+  cancel-in-progress: false
+
+jobs:
+  aggiorna:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Scarica i dati e calcola il modello
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: python build_data.py
+
+      - name: Salva i dati aggiornati
+        run: |
+          git config user.name "betlab-bot"
+          git config user.email "betlab-bot@users.noreply.github.com"
+          mkdir -p cache
+          git add data.json cache
+          git diff --cached --quiet || git commit -m "Aggiorna dati"
+          git push

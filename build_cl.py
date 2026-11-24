@@ -212,16 +212,37 @@ def build(bd):
                                  ref=bd.ref_from_fd(m)))
 
     # ---- 2. classifica Elo (clubelo.com)
+    # Il server di ClubElo a volte e' lento: provo piu' volte (http/https, oggi/ieri) e,
+    # se non risponde, uso l'ultima classifica salvata (l'Elo cambia poco da un giorno all'altro).
+    elo_path = os.path.join(CACHE, "cl_elo.csv")
+    text, errs = None, []
+    for day, scheme in ((NOW, "http"), (NOW, "https"), (NOW - timedelta(days=1), "http")):
+        try:
+            t = bd.decode(bd.fetch(f"{scheme}://api.clubelo.com/{day.strftime('%Y-%m-%d')}",
+                                   "clubelo.csv", timeout=45))
+            if t.startswith("Rank") or "Club" in t[:60]:
+                text = t
+                break
+            errs.append("risposta non valida")
+        except Exception as e:
+            errs.append(str(e)[:60])
+    if text and not bd.OFFLINE:
+        with open(elo_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        ts["elo"] = bd.iso(NOW)
+    elif not text and os.path.exists(elo_path) and not bd.OFFLINE:
+        with open(elo_path, encoding="utf-8") as f:
+            text = f.read()
+        log(f"Champions: ClubElo non risponde ({errs[-1] if errs else '?'}), uso la classifica salvata "
+            f"del {ts.get('elo', '?')[:10]}")
+    elif not text:
+        log(f"Champions: classifica Elo non disponibile ({'; '.join(errs)})")
     elo_rows = []
-    try:
-        text = bd.decode(bd.fetch(f"http://api.clubelo.com/{NOW.strftime('%Y-%m-%d')}", "clubelo.csv"))
-        for r in csv.DictReader(io.StringIO(text)):
-            try:
-                elo_rows.append((r["Club"], r["Country"], float(r["Elo"])))
-            except (KeyError, ValueError, TypeError):
-                pass
-    except Exception as e:
-        log(f"Champions: classifica Elo non disponibile ({e})")
+    for r in csv.DictReader(io.StringIO(text or "")):
+        try:
+            elo_rows.append((r["Club"], r["Country"], float(r["Elo"])))
+        except (KeyError, ValueError, TypeError):
+            pass
     if not elo_rows:
         log("Champions: senza Elo non posso calcolare le probabilita'")
         return None
